@@ -31,9 +31,14 @@ async function run() {
     // all database and collection names
     const bookCollections = client.db("librario").collection("books");
 
-    // all apis
-    // api for popular books
+    // api for all books
     app.get("/books", async (req, res) => {
+      const books = await bookCollections.find().toArray();
+      res.send(books);
+    });
+
+    // api for popular books
+    app.get("/books/popular", async (req, res) => {
       const query = { rating: { $gt: 4.7 } };
       const book = await bookCollections.find(query).limit(6).toArray();
       res.send(book);
