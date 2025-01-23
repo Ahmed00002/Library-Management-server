@@ -27,6 +27,16 @@ async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
     await client.connect();
+
+    // all database and collection names
+    const bookCollections = client.db("librario").collection("books");
+
+    // all apis
+    app.get("/books", async (req, res) => {
+      const query = { rating: { $gt: 4.7 } };
+      const book = await bookCollections.find(query).limit(6).toArray();
+      res.send(book);
+    });
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
     console.log(
