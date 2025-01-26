@@ -55,7 +55,6 @@ async function run() {
     // api for category based books
     app.get("/books/category", async (req, res) => {
       const categoryName = req.query.name;
-      console.log(categoryName);
       const query = { category: categoryName };
       const books = await bookCollections.find(query).toArray();
       res.send(books);
@@ -67,6 +66,26 @@ async function run() {
       const query = { _id: new ObjectId(id) };
       const bookData = await bookCollections.findOne(query);
       res.send(bookData);
+    });
+
+    // api for get borrowed book data for specific user
+    app.get("/user/borrowed", async (req, res) => {
+      const email = req.query.email;
+      const validate = req.query.validate;
+      const bookId = req.query.bookId;
+
+      if (validate) {
+        const query = {
+          userEmail: email,
+          borrowedBookId: new ObjectId(bookId),
+        };
+        const result = await borrowedBookCollections.find(query).toArray();
+        res.send(result);
+      } else {
+        const query = { userEmail: email };
+        const result = await borrowedBookCollections.find(query).toArray();
+        res.send(result);
+      }
     });
 
     // update book data
@@ -81,12 +100,11 @@ async function run() {
           title: newData.title,
           author: newData.author,
           category: newData.category,
-          rating: newData.rating,
+          rating: parseInt(newData.rating),
           description: newData.description,
-          quantity: newData.quantity,
+          quantity: parseInt(newData.quantity),
         },
       };
-      console.log(updateDoc);
       const updated = await bookCollections.updateOne(
         filter,
         updateDoc,
@@ -103,7 +121,22 @@ async function run() {
       data.borrowData = today;
       data.borrowedBookId = new ObjectId(borrowedBookId);
 
+      const filter = { _id: new ObjectId(borrowedBookId) };
+      const updateDoc = {
+        $inc: {
+          quantity: -1,
+        },
+      };
+      const options = { upsert: true };
+
       const result = await borrowedBookCollections.insertOne(data);
+      const updated = await bookCollections.updateOne(
+        filter,
+        updateDoc,
+        options
+      );
+      console.log(updated);
+
       res.send(result);
     });
 
