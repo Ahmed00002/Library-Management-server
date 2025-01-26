@@ -35,6 +35,9 @@ async function run() {
 
     // all database and collection names
     const bookCollections = client.db("librario").collection("books");
+    const borrowedBookCollections = client
+      .db("librario")
+      .collection("borrowedBooks");
 
     // api for all books
     app.get("/books", async (req, res) => {
@@ -80,6 +83,7 @@ async function run() {
           category: newData.category,
           rating: newData.rating,
           description: newData.description,
+          quantity: newData.quantity,
         },
       };
       console.log(updateDoc);
@@ -89,6 +93,18 @@ async function run() {
         options
       );
       res.send(updated);
+    });
+
+    // api for borrow books
+    app.post("/books/borrow/:id", async (req, res) => {
+      const borrowedBookId = req.params.id;
+      const data = req.body;
+      const today = new Date().toISOString().split("T")[0];
+      data.borrowData = today;
+      data.borrowedBookId = new ObjectId(borrowedBookId);
+
+      const result = await borrowedBookCollections.insertOne(data);
+      res.send(result);
     });
 
     // Send a ping to confirm a successful connection
