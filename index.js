@@ -1,6 +1,6 @@
 import e from "express";
 import cors from "cors";
-import { MongoClient, ServerApiVersion } from "mongodb";
+import { MongoClient, ObjectId, ServerApiVersion } from "mongodb";
 import "dotenv/config";
 
 // initialization app
@@ -9,7 +9,12 @@ const port = process.env.PORT || 5000;
 
 // middleware
 app.use(e.json());
-app.use(cors());
+app.use(
+  cors({
+    origin: ["http://localhost:5173"],
+    credentials: true,
+  })
+);
 
 // connection uri
 const uri = `mongodb+srv://${process.env.DB_user}:${process.env.DB_pass}@cluster0.tvnzs.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
@@ -47,9 +52,43 @@ async function run() {
     // api for category based books
     app.get("/books/category", async (req, res) => {
       const categoryName = req.query.name;
+      console.log(categoryName);
       const query = { category: categoryName };
       const books = await bookCollections.find(query).toArray();
       res.send(books);
+    });
+
+    // api for single book data
+    app.get("/books/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const bookData = await bookCollections.findOne(query);
+      res.send(bookData);
+    });
+
+    // update book data
+    app.post("/books/update/:id", async (req, res) => {
+      const id = req.params.id;
+      const newData = req.body;
+      const filter = { _id: new ObjectId(id) };
+      const options = { upsert: true };
+      const updateDoc = {
+        $set: {
+          image: newData.image,
+          title: newData.title,
+          author: newData.author,
+          category: newData.category,
+          rating: newData.rating,
+          description: newData.description,
+        },
+      };
+      console.log(updateDoc);
+      const updated = await bookCollections.updateOne(
+        filter,
+        updateDoc,
+        options
+      );
+      res.send(updated);
     });
 
     // Send a ping to confirm a successful connection
