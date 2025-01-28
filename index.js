@@ -2,6 +2,8 @@ import e from "express";
 import cors from "cors";
 import { MongoClient, ObjectId, ServerApiVersion } from "mongodb";
 import "dotenv/config";
+import jwt from "jsonwebtoken";
+import cookieParser from "cookie-parser";
 
 // initialization app
 const app = e();
@@ -15,6 +17,25 @@ app.use(
     credentials: true,
   })
 );
+app.use(cookieParser());
+
+// jwt middleware
+const verifyToken = (req, res, next) => {
+  const token = req.cookies.token;
+
+  if (!token) {
+    return res.status(401).send({ message: "Unauthorized access" });
+  }
+
+  jwt.verify(token, process.env.JWT_ACCESS_KEY, (err, decoded) => {
+    if (err) {
+      return res.status(401).send({ message: "Unauthorized access" });
+    }
+
+    req.user = decoded;
+    next();
+  });
+};
 
 // connection uri
 const uri = `mongodb+srv://${process.env.DB_user}:${process.env.DB_pass}@cluster0.tvnzs.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
@@ -39,15 +60,40 @@ async function run() {
       .db("librario")
       .collection("borrowedBooks");
 
+    //   jwt token generate
+    app.post("/jwt", (req, res) => {
+      const playload = req.body;
+
+      const token = jwt.sign(playload, process.env.JWT_ACCESS_KEY, {
+        expiresIn: "5h",
+      });
+
+      res
+        .cookie("token", token, {
+          httpOnly: true,
+          secure: false,
+        })
+        .status(200)
+        .send({ success: true, message: "login successful" });
+    });
+
     // api for all books
     app.get("/books", async (req, res) => {
-      const books = await bookCollections.find().toArray();
-      res.send(books);
+      const filter = req.query.filter;
+
+      if (filter && filter === "true") {
+        const query = { quantity: { $gt: 0 } };
+        const books = await bookCollections.find(query).toArray();
+        res.send(books);
+      } else {
+        const books = await bookCollections.find().toArray();
+        res.send(books);
+      }
     });
 
     // api for popular books
     app.get("/books/popular", async (req, res) => {
-      const query = { rating: { $gt: 4.7 } };
+      const query = { rating: { $gt: 3.9 } };
       const book = await bookCollections.find(query).limit(6).toArray();
       res.send(book);
     });
@@ -61,30 +107,44 @@ async function run() {
     });
 
     // api for single book data
-    app.get("/books/:id", async (req, res) => {
-      const id = req.params.id;
-      const query = { _id: new ObjectId(id) };
-      const bookData = await bookCollections.findOne(query);
-      res.send(bookData);
+    app.get("/books/:id", verifyToken, async (req, res) => {
+      const id = req.params?.id;
+
+      if (ObjectId.isValid(id)) {
+        try {
+          const query = { _id: new ObjectId(id) };
+          const bookData = await bookCollections.findOne(query);
+          res.send(bookData);
+        } catch (e) {
+          res.status(500).send({ message: "an error occured" });
+        }
+      } else {
+        res.status(400).send({ message: "invalid ID format" });
+      }
     });
 
     // api for get borrowed book data for specific user
-    app.get("/user/borrowed", async (req, res) => {
-      const email = req.query.email;
-      const validate = req.query.validate;
-      const bookId = req.query.bookId;
+    app.get("/user/borrowed", verifyToken, async (req, res) => {
+      const email = req.query?.email;
+      const decodedEmail = req.user.email;
+      const validate = req.query?.validate;
+      const bookId = req.query?.bookId;
 
-      if (validate) {
-        const query = {
-          userEmail: email,
-          borrowedBookId: new ObjectId(bookId),
-        };
-        const result = await borrowedBookCollections.find(query).toArray();
-        res.send(result);
+      if (decodedEmail === email) {
+        if (validate) {
+          const query = {
+            userEmail: email,
+            borrowedBookId: new ObjectId(bookId),
+          };
+          const result = await borrowedBookCollections.find(query).toArray();
+          res.send(result);
+        } else {
+          const query = { userEmail: email };
+          const result = await borrowedBookCollections.find(query).toArray();
+          res.send(result);
+        }
       } else {
-        const query = { userEmail: email };
-        const result = await borrowedBookCollections.find(query).toArray();
-        res.send(result);
+        res.status(403).send({ message: "forbidden access" });
       }
     });
 
@@ -100,7 +160,7 @@ async function run() {
           title: newData.title,
           author: newData.author,
           category: newData.category,
-          rating: parseInt(newData.rating),
+          rating: parseFloat(newData.rating),
           description: newData.description,
           quantity: parseInt(newData.quantity),
         },
@@ -114,7 +174,7 @@ async function run() {
     });
 
     // api for borrow books
-    app.post("/books/borrow/:id", async (req, res) => {
+    app.post("/books/borrow/:id", verifyToken, async (req, res) => {
       const borrowedBookId = req.params.id;
       const data = req.body;
       const today = new Date().toISOString().split("T")[0];
@@ -135,8 +195,46 @@ async function run() {
         updateDoc,
         options
       );
-      console.log(updated);
 
+      res.send(result);
+    });
+
+    // api for returning books
+    app.get("/return", verifyToken, async (req, res) => {
+      const borrowedId = req.query.bbId; //borrowed book id
+      const currentId = req.query.cbId; //current data id
+      const email = req.query.email; // user email
+      const query = { _id: new ObjectId(currentId), userEmail: email }; //query for getting the correct borrowed book id
+      const filter = { _id: new ObjectId(borrowedId) };
+      const updateDoc = {
+        $inc: {
+          quantity: +1,
+        },
+      };
+      const options = { upsert: true };
+      const result = await borrowedBookCollections.deleteOne(query);
+      const update = await bookCollections.updateOne(
+        filter,
+        updateDoc,
+        options
+      );
+      res.send(result);
+    });
+
+    // api for adding new book
+    app.post("/book/add", verifyToken, async (req, res) => {
+      const reqBody = req.body;
+      const bookData = {
+        image: reqBody.image,
+        title: reqBody.title,
+        author: reqBody.author,
+        category: reqBody.category,
+        rating: parseFloat(reqBody.rating),
+        description: reqBody.description,
+        quantity: parseInt(reqBody.quantity),
+      };
+
+      const result = await bookCollections.insertOne(bookData);
       res.send(result);
     });
 
