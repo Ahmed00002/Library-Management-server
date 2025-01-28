@@ -13,7 +13,7 @@ const port = process.env.PORT || 5000;
 app.use(e.json());
 app.use(
   cors({
-    origin: ["http://localhost:5173"],
+    origin: ["http://localhost:5173", "https://librario.netlify.app"],
     credentials: true,
   })
 );
@@ -24,12 +24,14 @@ const verifyToken = (req, res, next) => {
   const token = req.cookies.token;
 
   if (!token) {
-    return res.status(401).send({ message: "Unauthorized access" });
+    return res
+      .status(401)
+      .send({ message: `"Unauthorized access" ${token}`, token: token });
   }
 
   jwt.verify(token, process.env.JWT_ACCESS_KEY, (err, decoded) => {
     if (err) {
-      return res.status(401).send({ message: "Unauthorized access" });
+      return res.status(401).send({ message: "Invalid token given" });
     }
 
     req.user = decoded;
@@ -52,7 +54,7 @@ const client = new MongoClient(uri, {
 async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
-    await client.connect();
+    // await client.connect();
 
     // all database and collection names
     const bookCollections = client.db("librario").collection("books");
@@ -71,7 +73,8 @@ async function run() {
       res
         .cookie("token", token, {
           httpOnly: true,
-          secure: false,
+          secure: true, // Set true for HTTPS
+          sameSite: "none", // Required for cross-origin cookies
         })
         .status(200)
         .send({ success: true, message: "login successful" });
@@ -239,10 +242,10 @@ async function run() {
     });
 
     // Send a ping to confirm a successful connection
-    await client.db("admin").command({ ping: 1 });
-    console.log(
-      "Pinged your deployment. You successfully connected to MongoDB!"
-    );
+    // await client.db("admin").command({ ping: 1 });
+    // console.log(
+    //   "Pinged your deployment. You successfully connected to MongoDB!"
+    // );
   } finally {
     // Ensures that the client will close when you finish/error
     // await client.close();
